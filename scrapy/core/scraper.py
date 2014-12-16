@@ -163,6 +163,7 @@ class Scraper(object):
     def handle_spider_output(self, result, request, response, spider):
         if not result:
             return defer_succeed(None)
+        result = self._process_scheduler_spider_output(result, request, response, spider)
         it = iter_errback(result, self.handle_spider_error, request, response, spider)
         dfd = parallel(it, self.concurrent_items,
             self._process_spidermw_output, request, response, spider)
@@ -202,7 +203,7 @@ class Scraper(object):
                     log.msg(format='Error downloading %(request)s: %(errmsg)s',
                             level=log.ERROR, spider=spider, request=request,
                             errmsg=errmsg)
-
+        self._process_scheduler_download_error(spider_failure, download_failure, request, spider)
         if spider_failure is not download_failure:
             return spider_failure
 
@@ -227,3 +228,26 @@ class Scraper(object):
                 signal=signals.item_scraped, item=output, response=response,
                 spider=spider)
 
+    def _get_scheduler(self):
+        return self.crawler.engine.slot.scheduler
+
+    def _process_scheduler_spider_output(self, result, request, response, spider):
+        scheduler = self._get_scheduler()
+        if hasattr(scheduler, 'process_spider_output'):
+            result = scheduler.process_spider_output(
+                result=result,
+                request=request,
+                response=response,
+                spider=spider
+            )
+        return result
+
+    def _process_scheduler_download_error(self, spider_failure, download_failure, request, spider):
+        scheduler = self._get_scheduler()
+        if hasattr(scheduler, 'process_download_error'):
+            scheduler.process_download_error(
+                spider_failure=spider_failure,
+                download_failure=download_failure,
+                request=request,
+                spider=spider
+            )
